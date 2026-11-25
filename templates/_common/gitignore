@@ -1,0 +1,7 @@
+build/
+*-eps-converted-to.pdf
+*.synctex.gz
+*.aux
+*.log
+*.fls
+*.fdb_latexmk

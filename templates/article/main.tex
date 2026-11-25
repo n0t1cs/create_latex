@@ -1,0 +1,91 @@
+% =============================================================================
+%  @@TITLE@@
+%  Template: article          Build: ./build.sh  ->  build/main.pdf
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% ---- encoding, language, fonts ----------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}          % [portuguese] for documents in Portuguese
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ---- page layout -------------------------------------------------------------
+\usepackage[margin=2.5cm]{geometry}
+
+% ---- mathematics -------------------------------------------------------------
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{bm}
+
+% ---- figures and tables ------------------------------------------------------
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs,multirow,tabularx,array}
+\usepackage{caption,subcaption}
+\usepackage{float}
+
+% ---- units, colours, lists, algorithms ---------------------------------------
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ---- bibliography (BibTeX, numeric) -------------------------------------------
+\usepackage[numbers,sort&compress]{natbib}
+
+% ---- links and cross-references (keep these last) -----------------------------
+\usepackage[hidelinks]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+% ---- document info -------------------------------------------------------------
+\title{@@TITLE@@}
+\author{@@AUTHOR@@\\[2pt]
+  \small @@AFFILIATION@@\\
+  \small\texttt{@@EMAIL@@}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Write the abstract here.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+Start writing here. Citation example~\cite{lamport1994latex}; cross-reference
+example: \cref{sec:method}, \cref{tab:example}.
+
+\section{Method}\label{sec:method}
+\begin{equation}
+  \mathbf{x}_{k+1} = f(\mathbf{x}_k, \mathbf{u}_k) + \mathbf{w}_k
+  \label{eq:model}
+\end{equation}
+
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=0.8\linewidth]{my_figure}   % file in figures/
+%   \caption{Caption.}\label{fig:my_figure}
+% \end{figure}
+
+\section{Results}\label{sec:results}
+\begin{table}[t]
+  \centering
+  \caption{Example table.}\label{tab:example}
+  \begin{tabular}{lcc}
+    \toprule
+    Method & RMSE (\si{\metre}) & Time (\si{\milli\second}) \\
+    \midrule
+    A & 0.12 & 15 \\
+    B & 0.09 & 22 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Conclusion}\label{sec:conclusion}
+
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}

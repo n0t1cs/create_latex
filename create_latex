@@ -1,0 +1,461 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  create_latex — scaffold a ready-to-compile LaTeX project from a template
+#  MIT License — see README.md for installation and template download links
+#
+#  create_latex [-p <profile>] [--local] <project_name> <template>
+#  create_latex --list | --profiles
+#  create_latex --install-class <name> <folder|zip>
+#  create_latex --add-template <name> <folder|zip> [main.tex]
+#  create_latex --remove-template <name>
+# =============================================================================
+set -euo pipefail
+shopt -u patsub_replacement 2>/dev/null || true   # bash 5.2: keep '&' literal
+
+VERSION="1.2.0"
+DATA_DIR="${CREATE_LATEX_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/create_latex}"
+TEMPLATES_DIR="$DATA_DIR/templates"
+CONFIG_FILE="${CREATE_LATEX_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/create_latex/config}"
+
+die()  { printf '\033[31mcreate_latex: %s\033[0m\n' "$*" >&2; exit 1; }
+warn() { printf '\033[33mwarning: %s\033[0m\n' "$*" >&2; }
+ok()   { printf '\033[32m%s\033[0m\n' "$*"; }
+
+texmfhome() { kpsewhich -var-value TEXMFHOME 2>/dev/null || printf '%s/texmf\n' "$HOME"; }
+
+usage() {
+  cat <<EOF
+create_latex $VERSION
+
+Usage:
+  create_latex [options] <project_name> <template>   create ./<project_name>
+    -p, --profile <name>   author profile from your config (affiliation, e-mail, ...)
+                           default: the template's profile, else default_profile
+    --local                also copy the class files into the project
+                           (for submission / Overleaf)
+
+  create_latex --list                  templates, and anything LaTeX is missing
+  create_latex --profiles              author profiles in your config
+  create_latex --install-class <name> <folder|zip>
+                                       install a class bundle (cls, sty, bst,
+                                       logos, fonts) into TEXMFHOME
+  create_latex --add-template <name> <folder|zip> [main_file.tex]
+                                       turn any template folder into a template
+  create_latex --remove-template <name>
+
+Examples:
+  create_latex my_report report                  # default profile
+  create_latex -p university phd_proposal report # another affiliation profile
+  create_latex --add-template mdpi ~/Downloads/MDPI_template.zip
+
+Templates : $TEMPLATES_DIR
+Config    : $CONFIG_FILE
+EOF
+}
+
+# ---------------------------------------------------------------- templates --
+read_conf() {                     # $1 = template dir
+  DESCRIPTION="" REQUIRES="" HINT="" BUNDLE="" SOURCE="" PROFILE=""
+  if [[ -f "$1/template.conf" ]]; then
+    # shellcheck disable=SC1091
+    source "$1/template.conf"
+  fi
+}
+
+missing_files() {                 # REQUIRES entries kpathsea cannot find
+  local r out=""
+  for r in $REQUIRES; do kpsewhich "$r" >/dev/null 2>&1 || out+=" $r"; done
+  printf '%s' "${out# }"
+}
+
+template_names() {
+  local d
+  for d in "$TEMPLATES_DIR"/*/; do
+    [[ -d "$d" ]] || continue
+    d=${d%/}; d=${d##*/}
+    [[ $d == _* ]] || printf '%s\n' "$d"
+  done
+}
+
+list_templates() {
+  [[ -d "$TEMPLATES_DIR" ]] || die "no templates in $TEMPLATES_DIR (run install.sh)"
+  echo "Available templates:"
+  local name miss
+  while read -r name; do
+    read_conf "$TEMPLATES_DIR/$name"
+    miss=$(missing_files)
+    printf '  \033[1m%-16s\033[0m %s' "$name" "$DESCRIPTION"
+    [[ -n $PROFILE ]] && printf ' \033[2m(profile: %s)\033[0m' "$PROFILE"
+    [[ -n $miss ]] && printf ' \033[33m[missing: %s]\033[0m' "$miss"
+    printf '\n'
+    [[ -n $miss && -n $SOURCE ]] && printf '  %-16s \033[2mget it: %s\033[0m\n' "" "$SOURCE"
+  done < <(template_names)
+  return 0
+}
+
+# ------------------------------------------------------------- user config --
+# INI file:
+#   [defaults]            values every profile inherits (+ default_profile)
+#   [profile <name>]      values that override the defaults for that profile
+# Every key becomes a @@KEY@@ placeholder (student_number -> @@STUDENT_NUMBER@@).
+# The old one-profile format (AUTHOR="...") is still read, as [defaults].
+declare -A CONF=()                # "section|key" -> value
+PROFILE_NAMES=()
+
+parse_config() {
+  local section="defaults" line key val
+  [[ -f "$CONFIG_FILE" ]] || return 0
+  while IFS= read -r line || [[ -n $line ]]; do
+    line=${line%$'\r'}
+    [[ $line =~ ^[[:space:]]*([#\;]|$) ]] && continue
+    if [[ $line =~ ^[[:space:]]*\[[[:space:]]*profile[[:space:]]+([A-Za-z0-9_.-]+)[[:space:]]*\][[:space:]]*$ ]]; then
+      section="profile:${BASH_REMATCH[1],,}"
+      PROFILE_NAMES+=("${BASH_REMATCH[1],,}")
+    elif [[ $line =~ ^[[:space:]]*\[[[:space:]]*defaults?[[:space:]]*\][[:space:]]*$ ]]; then
+      section="defaults"
+    elif [[ $line =~ ^[[:space:]]*([A-Za-z0-9_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      key=${BASH_REMATCH[1],,}; val=${BASH_REMATCH[2]}
+      val=${val%"${val##*[![:space:]]}"}                      # trim right
+      [[ $val =~ ^\"(.*)\"$ ]] && val=${BASH_REMATCH[1]}       # optional quotes
+      CONF["$section|$key"]=$val
+    else
+      warn "config line not understood, ignored: $line"
+    fi
+  done <"$CONFIG_FILE"
+}
+
+has_profile() { local p; for p in "${PROFILE_NAMES[@]}"; do [[ $p == "$1" ]] && return 0; done; return 1; }
+
+declare -A VAL=()                 # values of the chosen profile (lower-case keys)
+ACTIVE_PROFILE=""
+
+use_profile() {                   # $1 = asked with -p, $2 = template's default
+  local asked=${1,,} tpl=${2,,} p k
+  local def=${CONF[defaults|default_profile]:-}
+  def=${def,,}
+  if [[ -n $asked ]]; then
+    has_profile "$asked" || die "no profile '$asked' in $CONFIG_FILE (have: ${PROFILE_NAMES[*]:-none})"
+    p=$asked
+  elif [[ -n $tpl ]] && has_profile "$tpl"; then
+    p=$tpl
+  else
+    [[ -n $tpl ]] && warn "template prefers profile '$tpl', which is not in your config; using '${def:-defaults}'"
+    p=$def
+    [[ -z $p ]] || has_profile "$p" || die "default_profile '$p' is not defined in $CONFIG_FILE"
+  fi
+  ACTIVE_PROFILE=$p
+  VAL=()
+  for k in "${!CONF[@]}"; do [[ $k == defaults\|* ]] && VAL[${k#defaults|}]=${CONF[$k]}; done
+  if [[ -n $p ]]; then
+    for k in "${!CONF[@]}"; do [[ $k == "profile:$p|"* ]] && VAL[${k#"profile:$p|"}]=${CONF[$k]}; done
+  fi
+  unset 'VAL[default_profile]'
+  # sensible fallbacks
+  if [[ -z ${VAL[author]:-} ]]; then
+    VAL[author]=$(git config --global user.name 2>/dev/null || true)
+    [[ -n ${VAL[author]} ]] || VAL[author]=$(getent passwd "$USER" 2>/dev/null | cut -d: -f5 | cut -d, -f1)
+    [[ -n ${VAL[author]} ]] || VAL[author]=$USER
+  fi
+  : "${VAL[affiliation]:=Institution, City, Country}"
+  : "${VAL[email]:=email@example.com}"
+  : "${VAL[orcid]:=XXXX-XXXX-XXXX-XXXX}"
+  : "${VAL[affiliation_short]:=${VAL[affiliation]%%,*}}"
+  VAL[author_upper]=${VAL[author]^^}
+  VAL[author_surname]=${VAL[author]##* }
+  VAL[profile]=${p:-defaults}
+  VAL[year]=$(date +%Y)
+}
+
+list_profiles() {
+  parse_config
+  [[ -f "$CONFIG_FILE" ]] || die "no config yet: $CONFIG_FILE (run install.sh)"
+  local def=${CONF[defaults|default_profile]:-} p k mark extra
+  echo "Author: ${CONF[defaults|author]:-?}   ORCID: ${CONF[defaults|orcid]:-?}"
+  if (( ${#PROFILE_NAMES[@]} == 0 )); then
+    echo "No [profile ...] sections; every project uses the [defaults] values."
+  else
+    echo "Profiles (* = default_profile):"
+    for p in "${PROFILE_NAMES[@]}"; do
+      mark=" "; [[ $p == "${def,,}" ]] && mark="*"
+      printf '  %s \033[1m%-10s\033[0m %s  <%s>\n' "$mark" "$p" \
+        "${CONF[profile:$p|affiliation]:-${CONF[defaults|affiliation]:-}}" \
+        "${CONF[profile:$p|email]:-${CONF[defaults|email]:-}}"
+      extra=$(for k in "${!CONF[@]}"; do
+                [[ $k == "profile:$p|"* ]] || continue
+                k=${k#"profile:$p|"}
+                [[ $k == affiliation || $k == email ]] || printf '%s=%s\n' "$k" "${CONF[profile:$p|$k]}"
+              done | sort | tr '\n' ' ')
+      [[ -n $extra ]] && printf '    %-10s \033[2m%s\033[0m\n' "" "$extra"
+    done
+  fi
+  echo "Edit: $CONFIG_FILE"
+  return 0
+}
+
+render() {                        # replace every @@KEY@@ in one file
+  local f=$1 c tok key
+  grep -q '@@[A-Z0-9_]*@@' "$f" || return 0
+  c=$(<"$f")
+  while IFS= read -r tok; do
+    key=${tok//@/}; key=${key,,}
+    if [[ -n ${VAL[$key]+x} ]]; then
+      c=${c//"$tok"/"${VAL[$key]}"}
+    else
+      c=${c//"$tok"/}
+      EMPTY_KEYS+=("$key")
+    fi
+  done < <(grep -o '@@[A-Z0-9_]*@@' "$f" | sort -u)
+  printf '%s\n' "$c" >"$f"
+}
+
+# ------------------------------------------------------ source folder / zip --
+TMP_DIRS=()
+cleanup() { local d; for d in "${TMP_DIRS[@]}"; do rm -rf "$d"; done; }
+trap cleanup EXIT
+
+resolve_source() {                # folder or .zip -> folder (single top dir unwrapped)
+  local src=$1 tmp
+  if [[ -f $src && ${src,,} == *.zip ]]; then
+    command -v unzip >/dev/null || die "unzip not found (sudo apt install unzip)"
+    tmp=$(mktemp -d); TMP_DIRS+=("$tmp")
+    unzip -q "$src" -d "$tmp" || die "could not unzip $src"
+    rm -rf "$tmp/__MACOSX"
+    src=$tmp
+  fi
+  [[ -d $src ]] || die "folder or .zip not found: $src"
+  src=$(cd "$src" && pwd)
+  # a folder that only wraps one sub-folder (common in downloads) is unwrapped
+  local entries
+  while true; do
+    mapfile -t entries < <(find "$src" -mindepth 1 -maxdepth 1 ! -name '.*' ! -name '__MACOSX')
+    if (( ${#entries[@]} == 1 )) && [[ -d ${entries[0]} ]]; then src=${entries[0]}; else break; fi
+  done
+  printf '%s\n' "$src"
+}
+
+same_as_system() {                # true if TeX Live already ships an identical file
+  local f=$1 base=${1##*/} T p
+  T=$(texmfhome)
+  while IFS= read -r p; do
+    [[ $p == "$T"/* ]] && continue
+    cmp -s "$f" "$p" && return 0
+  done < <(kpsewhich -all "$base" 2>/dev/null)
+  return 1
+}
+
+# ----------------------------------------------------------- create project --
+copy_bundle_local() {             # copy an installed class bundle into the project
+  local bundle=$1 dest=$2 T d copied=0
+  T=$(texmfhome)
+  if [[ -d "$T/tex/latex/$bundle" ]]; then
+    cp -r "$T/tex/latex/$bundle/." "$dest/"; copied=1
+  fi
+  for d in "$T"/fonts/*/"$bundle" "$T"/fonts/*/*/"$bundle"; do
+    [[ -d "$d" ]] && { cp "$d"/* "$dest/"; copied=1; }
+  done
+  if (( copied )); then
+    echo "  + copied the '$bundle' class files into the project"
+  else
+    warn "--local: bundle '$bundle' is not installed in $T (see --install-class)"
+  fi
+}
+
+create_project() {
+  local local_copy=$1 asked_profile=$2 name=$3 tpl=${4,,}
+  local tdir="$TEMPLATES_DIR/$tpl"
+
+  [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] ||
+    die "invalid project name '$name' (use letters, digits, '-', '_' or '.', no spaces)"
+  [[ $tpl != _* && -d "$tdir" ]] ||
+    die "unknown template '$4'. Available: $(template_names | tr '\n' ' ')"
+  [[ ! -e "$name" ]] || die "'$name' already exists in $(pwd)"
+  [[ -f "$tdir/main.tex" ]] || die "template '$tpl' has no main.tex"
+
+  read_conf "$tdir"
+  local miss; miss=$(missing_files)
+
+  parse_config
+  use_profile "$asked_profile" "$PROFILE"
+  VAL[title]=${name//[_-]/ }
+  VAL[project]=${name//_/\\_}
+
+  mkdir -p "$name/build"
+  cp -r "$tdir/." "$name/"
+  rm -f "$name/template.conf"
+  [[ -d "$name/figures" || -d "$name/figs" ]] || mkdir -p "$name/figures"
+
+  # files every project gets (unless the template brings its own)
+  local common="$TEMPLATES_DIR/_common"
+  [[ -f "$name/build.sh" ]]   || cp "$common/build.sh" "$name/build.sh"
+  [[ -f "$name/.latexmkrc" ]] || cp "$common/latexmkrc" "$name/.latexmkrc"
+  [[ -f "$name/.gitignore" ]] || cp "$common/gitignore" "$name/.gitignore"
+  [[ -f "$name/.vscode/settings.json" ]] ||
+    { mkdir -p "$name/.vscode"; cp "$common/vscode_settings.json" "$name/.vscode/settings.json"; }
+  compgen -G "$name/*.bib" >/dev/null || cp "$common/references.bib" "$name/references.bib"
+  chmod +x "$name/build.sh"
+
+  EMPTY_KEYS=()
+  local f
+  while IFS= read -r -d '' f; do render "$f"; done \
+    < <(find "$name" -name '*.tex' -not -path "$name/build/*" -print0)
+  (( local_copy )) && [[ -n $BUNDLE ]] && copy_bundle_local "$BUNDLE" "$name"
+  (( local_copy )) && [[ -z $BUNDLE ]] && echo "  (--local: '$tpl' needs nothing outside the project)"
+
+  ok "Created $(pwd)/$name  [template: $tpl]"
+  printf '  profile: %s  (%s, %s)\n' "${VAL[profile]}" "${VAL[author]}" "${VAL[affiliation_short]}"
+  ( cd "$name" && find . -mindepth 1 -maxdepth 1 ! -name .vscode ! -name .gitignore ! -name .latexmkrc \
+      -printf '  %f%y\n' | sed 's/d$/\//; s/f$//' | sort )
+  if (( ${#EMPTY_KEYS[@]} )); then
+    printf '  \033[2mleft empty (not in profile %s): %s\033[0m\n' "${VAL[profile]}" \
+      "$(printf '%s\n' "${EMPTY_KEYS[@]}" | sort -u | tr '\n' ' ')"
+  fi
+  if [[ -n $miss ]]; then
+    warn "LaTeX cannot find: $miss"
+    [[ -n $HINT ]]   && warn "fix: $HINT"
+    [[ -n $SOURCE ]] && warn "download: $SOURCE"
+  fi
+  echo
+  echo "Next:  cd $name && ./build.sh      (PDF -> $name/build/main.pdf)"
+}
+
+# ------------------------------------------------------------ install class --
+install_class() {
+  local name=$1 src T f rel base ext dest n=0
+  [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid bundle name '$name'"
+  src=$(resolve_source "$2")
+  T=$(texmfhome)
+
+  # sample documents (real \documentclass + \begin{document}) are not part of the class
+  declare -A skip=()
+  while IFS= read -r -d '' f; do
+    if grep -q '^[[:space:]]*\\documentclass' "$f" && grep -q '^[^%]*\\begin{document}' "$f"; then
+      skip["${f%.*}"]=1
+      echo "  - skipping sample document ${f#"$src"/}"
+    fi
+  done < <(find "$src" -type f -name '*.tex' -print0)
+
+  while IFS= read -r -d '' f; do
+    rel=${f#"$src"/}; base=${f##*/}; ext=${base##*.}; ext=${ext,,}
+    [[ -n ${skip["${f%.*}"]+x} ]] && continue          # sample .tex and its .pdf
+    case $ext in
+      cls|sty|tex|cfg|def|clo|fd|ldf|lbx|cbx|png|jpg|jpeg|pdf|eps)
+                dest="tex/latex/$name/$rel" ;;
+      bst)      dest="bibtex/bst/$name/$rel" ;;
+      map)      dest="fonts/map/pdftex/$name/$base" ;;
+      enc)      dest="fonts/enc/dvips/$name/$base" ;;
+      tfm)      dest="fonts/tfm/$name/$base" ;;
+      vf)       dest="fonts/vf/$name/$base" ;;
+      pfb|pfm)  dest="fonts/type1/$name/$base" ;;
+      afm)      dest="fonts/afm/$name/$base" ;;
+      otf)      dest="fonts/opentype/$name/$base" ;;
+      ttf)      dest="fonts/truetype/$name/$base" ;;
+      *)        continue ;;
+    esac
+    case $ext in cls|sty|bst|fd|def|cfg|clo|map|tfm|pfb|enc|vf)
+      if same_as_system "$f"; then
+        echo "  - skipping $rel (TeX Live already has an identical copy)"; continue
+      fi ;;
+    esac
+    if [[ $ext == bst ]]; then                         # also kept with the class for --local
+      mkdir -p "$T/tex/latex/$name/$(dirname "$rel")"
+      cp "$f" "$T/tex/latex/$name/$rel"
+    fi
+    mkdir -p "$T/$(dirname "$dest")"
+    cp "$f" "$T/$dest"
+    n=$((n + 1))
+  done < <(find "$src" -type f -not -path '*/.git/*' -print0)
+
+  # EPS logos: pre-convert to PDF so pdflatex never has to write inside TEXMFHOME
+  if command -v epstopdf >/dev/null; then
+    while IFS= read -r -d '' f; do
+      epstopdf "$f" --outfile="${f%.eps}.pdf" 2>/dev/null &&
+        cp "${f%.eps}.pdf" "${f%.eps}-eps-converted-to.pdf"
+    done < <(find "$T/tex/latex/$name" -type f -name '*.eps' -print0 2>/dev/null)
+  elif find "$T/tex/latex/$name" -name '*.eps' 2>/dev/null | grep -q .; then
+    warn "epstopdf not found: install it (sudo apt install texlive-font-utils) and re-run"
+  fi
+
+  (( n > 0 )) || die "nothing to install from $2"
+  ok "Installed $n files of '$name' into $T"
+  echo "  classes/styles : $T/tex/latex/$name"
+  [[ -d "$T/bibtex/bst/$name" ]] && echo "  bibtex styles  : $T/bibtex/bst/$name"
+  ls -d "$T"/fonts/*/"$name" "$T"/fonts/*/*/"$name" 2>/dev/null | sed 's/^/  fonts          : /' || true
+  local cls; cls=$(cd "$T/tex/latex/$name" && find . -name '*.cls' | sed 's|^\./||' | head -1)
+  [[ -n $cls ]] && echo "  test with      : kpsewhich $cls"
+  return 0
+}
+
+# ------------------------------------------------------------- add template --
+add_template() {
+  local name=${1,,} src main=${3:-} dest f
+  [[ $name =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "invalid template name '$1'"
+  src=$(resolve_source "$2")
+  dest="$TEMPLATES_DIR/$name"
+  [[ ! -e "$dest" ]] || die "template '$name' already exists ($dest); remove it first with --remove-template $name"
+
+  if [[ -z $main ]]; then
+    mapfile -t cands < <(cd "$src" && grep -l '^[[:space:]]*\\documentclass' -- *.tex 2>/dev/null || true)
+    (( ${#cands[@]} == 1 )) || die "found ${#cands[@]} main .tex files in $src; pass the main file as 3rd argument"
+    main=${cands[0]}
+  fi
+  main=${main##*/}
+  [[ -f "$src/$main" ]] || die "$src/$main not found"
+
+  mkdir -p "$dest"
+  cp -r "$src/." "$dest/"
+  rm -rf "$dest/.git" "$dest/__MACOSX"
+  find "$dest" -type f \( -name '*.aux' -o -name '*.log' -o -name '*.out' -o -name '*.synctex.gz' \
+       -o -name '*.fls' -o -name '*.fdb_latexmk' -o -name '*.blg' -o -name '*.bbl' -o -name '*.toc' \
+       -o -name '*.bcf' -o -name '*.run.xml' -o -name '*.nav' -o -name '*.snm' \) -delete
+  # compiled sample PDFs (main.pdf, mainEN.pdf, ...) are not needed in new projects
+  find "$dest" -maxdepth 1 -type f -name "${main%.tex}*.pdf" -delete
+  # class files TeX Live already ships (identical copies) are dropped
+  while IFS= read -r -d '' f; do
+    same_as_system "$f" && { echo "  - dropping ${f#"$dest"/} (identical to TeX Live)"; rm -f "$f"; }
+  done < <(find "$dest" -maxdepth 1 -type f \( -name '*.cls' -o -name '*.sty' -o -name '*.bst' \) -print0)
+  [[ $main == main.tex ]] || mv "$dest/$main" "$dest/main.tex"
+
+  printf 'DESCRIPTION="%s"\nREQUIRES=""\nHINT=""\nBUNDLE=""\nSOURCE=""\n' \
+         "Custom template (from ${2##*/})" >"$dest/template.conf"
+  ok "Template '$name' added -> $dest"
+  echo "  edit its description in $dest/template.conf"
+  echo "  use it with:  create_latex <project_name> $name"
+}
+
+remove_template() {
+  local name=${1,,}
+  [[ $name != _* && -d "$TEMPLATES_DIR/$name" ]] || die "no template '$1'"
+  rm -rf "${TEMPLATES_DIR:?}/$name"
+  ok "Removed template '$name'"
+}
+
+# --------------------------------------------------------------------- main --
+command -v kpsewhich >/dev/null || die "LaTeX not found (sudo apt install texlive-latex-extra)"
+
+case "${1:-}" in
+  ""|-h|--help)        usage; exit 0 ;;
+  -v|--version)        echo "create_latex $VERSION"; exit 0 ;;
+  -l|--list)           list_templates; exit 0 ;;
+  --profiles)          list_profiles; exit 0 ;;
+  --install-class)     (( $# == 3 )) || die "usage: create_latex --install-class <name> <folder|zip>"
+                       install_class "$2" "$3"; exit 0 ;;
+  --add-template)      (( $# == 3 || $# == 4 )) || die "usage: create_latex --add-template <name> <folder|zip> [main.tex]"
+                       add_template "$2" "$3" "${4:-}"; exit 0 ;;
+  --remove-template)   (( $# == 2 )) || die "usage: create_latex --remove-template <name>"
+                       remove_template "$2"; exit 0 ;;
+esac
+
+local_copy=0 profile="" pos=()
+while (( $# )); do
+  case $1 in
+    -p|--profile)  (( $# >= 2 )) || die "$1 needs a profile name (see create_latex --profiles)"
+                   profile=$2; shift 2 ;;
+    --profile=*)   profile=${1#*=}; shift ;;
+    --local)       local_copy=1; shift ;;
+    --)            shift; pos+=("$@"); break ;;
+    -*)            die "unknown option '$1' (see create_latex --help)" ;;
+    *)             pos+=("$1"); shift ;;
+  esac
+done
+(( ${#pos[@]} == 2 )) || { usage; exit 1; }
+create_project "$local_copy" "$profile" "${pos[0]}" "${pos[1]}"

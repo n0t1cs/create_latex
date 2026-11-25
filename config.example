@@ -1,0 +1,38 @@
+# ~/.config/create_latex/config
+#
+# Your author details, inserted into every new project. Values are used exactly
+# as written (LaTeX is fine, e.g. "\&" for an ampersand); no quotes needed.
+# Comments are whole lines starting with #.
+#
+# [defaults]          who you are: shared by every profile
+# [profile <name>]    one per affiliation; its keys override [defaults]
+#
+# Pick the affiliation per project:   create_latex -p <name> <project> <template>
+# Without -p: the template's preferred profile, else default_profile.
+#
+# Every key is a template placeholder (student_number -> @@STUDENT_NUMBER@@).
+# The example templates use: author, orcid, affiliation, affiliation_short,
+# email, and (report title page) course and supervisor. Add any other key your
+# own templates need, e.g. "mdpi_journal = drones" for @@MDPI_JOURNAL@@.
+
+[defaults]
+author          = John Doe
+orcid           = XXXX-XXXX-XXXX-XXXX
+default_profile = institute
+
+# Research job: papers, project reports, conference talks
+[profile institute]
+affiliation       = Research Institute -- Full Name of the Institute, City, Country
+affiliation_short = Research Institute
+email             = john.doe@institute.org
+role              = Researcher
+
+# Student: thesis, coursework, defence slides
+[profile university]
+affiliation       = School of Engineering, University, City, Country
+affiliation_short = University
+email             = 1234567@university.edu
+role              = Student
+student_number    = 1234567
+course            = Doctoral Programme in Engineering
+supervisor        = Jane Roe, Richard Roe

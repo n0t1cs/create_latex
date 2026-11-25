@@ -1,0 +1,132 @@
+% =============================================================================
+%  @@TITLE@@
+%  Template: report           Build: ./build.sh  ->  build/main.pdf
+% =============================================================================
+\documentclass[11pt,a4paper,oneside]{report}
+
+% ---- encoding, language, fonts ----------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}          % [portuguese] for documents in Portuguese
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ---- page layout -------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---- mathematics -------------------------------------------------------------
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{bm}
+
+% ---- figures and tables ------------------------------------------------------
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs,multirow,tabularx,array}
+\usepackage{caption,subcaption}
+\usepackage{float}
+\usepackage[nottoc]{tocbibind}      % lists + bibliography appear in the TOC
+
+% ---- units, colours, lists, algorithms, code --------------------------------
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, frame=single,
+        numbers=left, numberstyle=\tiny\color{gray}}
+
+% ---- bibliography (BibTeX, numeric) -------------------------------------------
+\usepackage[numbers,sort&compress]{natbib}
+
+% ---- links and cross-references (keep these last) -----------------------------
+\usepackage[hidelinks]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+% ---- document info -------------------------------------------------------------
+\title{@@TITLE@@}
+\author{@@AUTHOR@@}
+\date{\today}
+
+% optional fields from your author profile: empty if the profile does not
+% define them, and then the title page simply leaves them out
+\newcommand*{\coursename}{@@COURSE@@}
+\newcommand*{\supervisorname}{@@SUPERVISOR@@}
+
+\begin{document}
+
+% ---- title page ----------------------------------------------------------------
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\large @@AFFILIATION@@\par}
+  \vspace{3cm}
+  {\Huge\bfseries @@TITLE@@\par}
+  \vspace{1.5cm}
+  {\Large @@AUTHOR@@\par}
+  \ifx\coursename\empty\else\vspace{1cm}{\large\coursename\par}\fi
+  \ifx\supervisorname\empty\else\vspace{0.5cm}{\large Supervisor: {\def\and{, }\supervisorname}\par}\fi
+  \vfill
+  {\large \today\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+Write the abstract here.
+
+\tableofcontents
+\listoffigures
+\listoftables
+\cleardoublepage
+\pagenumbering{arabic}
+
+% ---- main matter -----------------------------------------------------------------
+\chapter{Introduction}\label{ch:intro}
+Start writing here. Citation example~\cite{lamport1994latex}; cross-reference
+example: \cref{ch:background}, \cref{tab:example}.
+
+\section{Motivation}
+\section{Objectives}
+\section{Document structure}
+
+\chapter{Background}\label{ch:background}
+
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=0.8\linewidth]{my_figure}   % file in figures/
+%   \caption{Caption.}\label{fig:my_figure}
+% \end{figure}
+
+\chapter{Results}\label{ch:results}
+\begin{table}[t]
+  \centering
+  \caption{Example table.}\label{tab:example}
+  \begin{tabular}{lcc}
+    \toprule
+    Method & RMSE (\si{\metre}) & Time (\si{\milli\second}) \\
+    \midrule
+    A & 0.12 & 15 \\
+    B & 0.09 & 22 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\chapter{Conclusions}\label{ch:conclusions}
+
+% ---- back matter -----------------------------------------------------------------
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\appendix
+\chapter{Additional material}
+
+\end{document}

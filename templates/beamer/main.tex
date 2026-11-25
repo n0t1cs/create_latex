@@ -1,0 +1,123 @@
+% =============================================================================
+%  @@TITLE@@
+%  Template: beamer           Build: ./build.sh  ->  build/main.pdf
+% =============================================================================
+\documentclass[aspectratio=169,11pt]{beamer}   % aspectratio=43 for 4:3
+
+% ---- theme ---------------------------------------------------------------------
+\usetheme{Madrid}                % try: Boadilla, CambridgeUS, Singapore, metropolis
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{bibliography item}{\insertbiblabel}
+\setbeamertemplate{caption}[numbered]
+
+% ---- packages --------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs,multirow}
+\usepackage{xcolor}
+
+% ---- title page info ---------------------------------------------------------------
+\title[@@TITLE@@]{@@TITLE@@}
+\subtitle{}
+\author{@@AUTHOR@@}
+\institute[@@AFFILIATION_SHORT@@]{@@AFFILIATION@@}
+\date{\today}
+% \titlegraphic{\includegraphics[height=1cm]{logo}}   % logo in figures/
+
+% outline slide at the start of each section
+\AtBeginSection[]{%
+  \begin{frame}{Outline}
+    \tableofcontents[currentsection]
+  \end{frame}}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+% ==================================================================================
+\section{Introduction}
+
+\begin{frame}{Motivation}
+  \begin{itemize}
+    \item First point
+    \item<2-> Second point, appears on click
+    \item<3-> Third point~\cite{lamport1994latex}
+  \end{itemize}
+\end{frame}
+
+% ==================================================================================
+\section{Method}
+
+\begin{frame}{Two-column slide}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Model}
+        \[ \mathbf{x}_{k+1} = f(\mathbf{x}_k, \mathbf{u}_k) + \mathbf{w}_k \]
+      \end{block}
+      \begin{alertblock}{Key idea}
+        One short sentence.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      % \includegraphics[width=\linewidth]{my_figure}
+      \fbox{\parbox[c][3cm][c]{0.9\linewidth}{\centering figure goes here}}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ==================================================================================
+\section{Results}
+
+\begin{frame}{Results}
+  \begin{table}
+    \centering
+    \begin{tabular}{lcc}
+      \toprule
+      Method & RMSE (m) & Time (ms) \\
+      \midrule
+      A & 0.12 & 15 \\
+      B & \alert{0.09} & 22 \\
+      \bottomrule
+    \end{tabular}
+    \caption{Example table.}
+  \end{table}
+\end{frame}
+
+% ==================================================================================
+\section{Conclusions}
+
+\begin{frame}{Conclusions}
+  \begin{itemize}
+    \item Take-home message 1
+    \item Take-home message 2
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[c]
+  \centering
+  {\Large Thank you!}\\[1em]
+  \texttt{@@EMAIL@@}
+\end{frame}
+
+% ---- references (not counted in the slide numbers) ------------------------------
+\appendix
+\begin{frame}[allowframebreaks]{References}
+  \footnotesize
+  \bibliographystyle{plain}
+  \bibliography{references}
+\end{frame}
+
+\end{document}

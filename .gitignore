@@ -1,0 +1,11 @@
+# never commit downloaded templates or test projects
+*.zip
+*.tar.gz
+*.cls
+*.sty
+*.bst
+*.pfb
+*.tfm
+*.map
+build/
+test_*/
