@@ -182,11 +182,15 @@ create_latex my_paper mdpi
 cd my_paper && ./build.sh
 ```
 
-### 3. Make it fill in your details (optional)
+### 3. Mark where your details go (optional)
 
-Open `~/.local/share/create_latex/templates/<name>/main.tex` and replace the
-sample author data with placeholders. They are filled from your profile in
-every `.tex` file of a new project:
+Your details themselves are already in `~/.config/create_latex/config`; nothing
+to change there. But a downloaded template has a sample author typed into its
+`main.tex` (e.g. `First A. Author`), and create_latex cannot guess that this is
+where your name belongs. So, once per template, open
+`~/.local/share/create_latex/templates/<name>/main.tex` and replace the sample
+data with placeholders. From then on every new project from that template gets
+your details from the config (from the profile chosen with `-p`):
 
 ```latex
 \author{@@AUTHOR@@}                                  % was: First A. Author
