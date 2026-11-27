@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  build.sh — compile this LaTeX project. Everything is written to ./build
+#  build.sh — compile this LaTeX project. Work files go to ./build; after every
+#  successful build the PDF is copied next to main.tex (./main.pdf)
 #
 #    ./build.sh          compile (LaTeX + BibTeX/Biber + glossaries, as needed)
 #    ./build.sh watch    recompile automatically every time you save
 #    ./build.sh open     open the PDF
-#    ./build.sh clean    empty ./build
+#    ./build.sh clean    empty ./build (./main.pdf is kept)
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
@@ -14,7 +15,8 @@ MAIN="main"            # main file, without .tex
 OUT="build"            # output folder
 ENGINE="pdflatex"      # pdflatex | xelatex | lualatex
 
-PDF="$OUT/$MAIN.pdf"
+PDF="$OUT/$MAIN.pdf"   # written by LaTeX
+FINAL="$MAIN.pdf"      # the copy in the project folder
 LATEX_OPTS=(-interaction=nonstopmode -halt-on-error -file-line-error -synctex=1)
 case $ENGINE in
   pdflatex) LMK_ENGINE=-pdf ;;
@@ -61,11 +63,15 @@ bib_problems() {      # bibliography errors that latexmk does not stop on
   return 0
 }
 
+publish() {            # copy the PDF to the project folder (atomic, so open viewers reload cleanly)
+  cp "$PDF" "$FINAL.tmp" && mv -f "$FINAL.tmp" "$FINAL"
+}
+
 summary() {
   local log="$OUT/$MAIN.log" w b
   w=$(grep -cE 'LaTeX Warning: (Citation|Reference).*undefined' "$log" 2>/dev/null || true)
   b=$(bib_problems)
-  echo -e "\033[32mOK\033[0m -> $PDF ($(pdfinfo "$PDF" 2>/dev/null | awk '/^Pages/{print $2" pages"}'))"
+  echo -e "\033[32mOK\033[0m -> $FINAL ($(pdfinfo "$FINAL" 2>/dev/null | awk '/^Pages/{print $2" pages"}'))"
   if [[ -n $b ]]; then
     echo -e "\033[33mBibliography not built:\033[0m"
     printf '  %s\n' "${b//$'\n'/$'\n'  }"
@@ -103,15 +109,17 @@ case "${1:-build}" in
   build)
     prepare_out
     if command -v latexmk >/dev/null; then build_latexmk; else build_manual; fi
+    publish
     summary ;;
   watch)
     command -v latexmk >/dev/null || { echo "watch needs latexmk: sudo apt install latexmk"; exit 1; }
     prepare_out
     latexmk "$LMK_ENGINE" -interaction=nonstopmode -file-line-error -synctex=1 \
-            -outdir="$OUT" -pvc -view=none "$MAIN.tex" ;;
+            -outdir="$OUT" -pvc -view=none \
+            -e "\$success_cmd = q(cp $PDF $FINAL.tmp && mv -f $FINAL.tmp $FINAL);" "$MAIN.tex" ;;
   open)
-    [[ -f $PDF ]] || "$0" build
-    xdg-open "$PDF" >/dev/null 2>&1 & ;;
+    [[ -f $FINAL ]] || "$0" build
+    xdg-open "$FINAL" >/dev/null 2>&1 & ;;
   clean)
     rm -rf "${OUT:?}"/* && echo "cleaned $OUT/" ;;
   *)

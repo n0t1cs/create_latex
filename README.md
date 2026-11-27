@@ -5,7 +5,7 @@ more. Bash, Linux, TeX Live. No sudo.
 
 ```bash
 create_latex <project_name> report
-cd <project_name> && ./build.sh          # -> build/main.pdf
+cd <project_name> && ./build.sh          # -> main.pdf
 ```
 
 Every project gets the same layout:
@@ -15,7 +15,8 @@ Every project gets the same layout:
 ├── main.tex          the template's main file, your name/affiliation filled in
 ├── references.bib    (only if the template has no .bib of its own)
 ├── figures/          \graphicspath points here
-├── build/            aux files and build/main.pdf, nothing else in the root
+├── main.pdf          the compiled PDF, copied here after every successful build
+├── build/            work files (aux, log, bbl, build/main.pdf)
 ├── build.sh          ./build.sh | ./build.sh watch | ./build.sh open | ./build.sh clean
 ├── .latexmkrc        build/ as output dir, glossaries, \include{} subfolders
 ├── .gitignore
@@ -23,8 +24,11 @@ Every project gets the same layout:
 ```
 
 `build.sh` uses `latexmk` (BibTeX or Biber, glossaries, reruns) and falls back to
-plain `pdflatex` passes when `latexmk` is missing. On failure it prints the first
-LaTeX errors instead of the whole log.
+plain `pdflatex` passes when `latexmk` is missing. After every successful build,
+including in `./build.sh watch`, it copies `build/main.pdf` to `main.pdf` in the
+project folder; a failed build leaves the last good `main.pdf` in place. On
+failure it prints the first LaTeX errors, and it tells you when a `.bib` or
+`.bst` file is missing.
 
 **This repository ships only three generic example templates** (`article`,
 `report`, `beamer`) that need nothing but TeX Live. Journal, conference and
@@ -179,7 +183,7 @@ Then use it like any other template:
 
 ```bash
 create_latex my_paper mdpi
-cd my_paper && ./build.sh
+cd my_paper && ./build.sh          # -> my_paper/main.pdf
 ```
 
 ### 3. Mark where your details go (optional)
