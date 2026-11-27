@@ -31,22 +31,54 @@ prepare_out() {
 }
 
 show_errors() {
-  local log="$OUT/$MAIN.log"
-  echo -e "\033[31mBuild failed.\033[0m First errors from $log:"
-  [[ -f $log ]] && grep -E -A4 '^(\./|/)?[^ ]+\.tex:[0-9]+: |^! ' "$log" | head -n 30
-  [[ -f "$OUT/$MAIN.blg" ]] && grep -E '^(I |Warning--|---|ERROR)' "$OUT/$MAIN.blg" | head -n 10 || true
+  local log="$OUT/$MAIN.log" e b
+  echo -e "\033[31mBuild failed.\033[0m"
+  e=$( { grep -E -A4 '^(\./|/)?[^ ]+\.tex:[0-9]+: |^! ' "$log" 2>/dev/null || true; } | head -n 30)
+  [[ -n $e ]] && printf 'First LaTeX errors (%s):\n%s\n' "$log" "$e"
+  b=$(bib_problems)
+  [[ -n $b ]] && printf '\033[33mBibliography:\033[0m\n  %s\n' "${b//$'\n'/$'\n'  }"
   exit 1
 }
 
+bib_problems() {      # bibliography errors that latexmk does not stop on
+  local aux="$OUT/$MAIN.aux" bcf="$OUT/$MAIN.bcf" blg="$OUT/$MAIN.blg" f
+  found() { [[ -f $1 ]] || kpsewhich "$1" >/dev/null 2>&1; }
+  if [[ -f $aux ]]; then                                    # BibTeX
+    for f in $(sed -n 's/^\\bibdata{\(.*\)}$/\1/p' "$aux" | tr ',' ' '); do
+      found "${f%.bib}.bib" || echo "missing .bib file: ${f%.bib}.bib   (\\bibliography{$f})"
+    done
+    for f in $(sed -n 's/^\\bibstyle{\(.*\)}$/\1/p' "$aux"); do
+      found "$f.bst" || { echo "missing style: $f.bst   (\\bibliographystyle{$f}) - not part of TeX Live."
+                          echo "  install it once for all projects:  create_latex --install-class bibstyles <path>/$f.bst"; }
+    done
+  fi
+  if [[ -f $bcf ]]; then                                    # biblatex + Biber
+    for f in $(grep -o '<bcf:datasource[^>]*>[^<]*' "$bcf" | sed 's/.*>//'); do
+      found "$f" || echo "missing .bib file: $f   (\\addbibresource{$f})"
+    done
+  fi
+  [[ -f $blg ]] && grep -E "^I couldn't open|^I found no|^ERROR" "$blg" | sort -u | head -n 5
+  return 0
+}
+
 summary() {
-  local log="$OUT/$MAIN.log" w
+  local log="$OUT/$MAIN.log" w b
   w=$(grep -cE 'LaTeX Warning: (Citation|Reference).*undefined' "$log" 2>/dev/null || true)
+  b=$(bib_problems)
   echo -e "\033[32mOK\033[0m -> $PDF ($(pdfinfo "$PDF" 2>/dev/null | awk '/^Pages/{print $2" pages"}'))"
+  if [[ -n $b ]]; then
+    echo -e "\033[33mBibliography not built:\033[0m"
+    printf '  %s\n' "${b//$'\n'/$'\n'  }"
+  fi
   [[ ${w:-0} -gt 0 ]] && echo -e "\033[33m$w undefined citation/reference warnings (see $log)\033[0m" || true
 }
 
 build_latexmk() {      # rules for glossaries live in .latexmkrc
-  latexmk "$LMK_ENGINE" "${LATEX_OPTS[@]}" -outdir="$OUT" -silent "$MAIN.tex" >/dev/null 2>&1 || show_errors
+  local force=()
+  # the last build had bibliography errors: rebuild everything, so a .bib/.bst
+  # that has since been added or installed is picked up
+  [[ -n $(bib_problems) ]] && force=(-g)
+  latexmk "$LMK_ENGINE" "${LATEX_OPTS[@]}" "${force[@]}" -outdir="$OUT" -silent "$MAIN.tex" >/dev/null 2>&1 || show_errors
 }
 
 build_manual() {       # used only when latexmk is not installed

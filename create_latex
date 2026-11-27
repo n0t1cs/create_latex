@@ -5,7 +5,7 @@
 #
 #  create_latex [-p <profile>] [--local] <project_name> <template>
 #  create_latex --list | --profiles
-#  create_latex --install-class <name> <folder|zip>
+#  create_latex --install-class <name> <folder|zip|file>
 #  create_latex --add-template <name> <folder|zip> [main.tex]
 #  create_latex --remove-template <name>
 # =============================================================================
@@ -36,9 +36,10 @@ Usage:
 
   create_latex --list                  templates, and anything LaTeX is missing
   create_latex --profiles              author profiles in your config
-  create_latex --install-class <name> <folder|zip>
+  create_latex --install-class <name> <folder|zip|file>
                                        install a class bundle (cls, sty, bst,
-                                       logos, fonts) into TEXMFHOME
+                                       logos, fonts) or a single custom .bst/.sty
+                                       into TEXMFHOME, for every project
   create_latex --add-template <name> <folder|zip> [main_file.tex]
                                        turn any template folder into a template
   create_latex --remove-template <name>
@@ -213,7 +214,7 @@ TMP_DIRS=()
 cleanup() { local d; for d in "${TMP_DIRS[@]}"; do rm -rf "$d"; done; }
 trap cleanup EXIT
 
-resolve_source() {                # folder or .zip -> folder (single top dir unwrapped)
+resolve_source() {                # folder, .zip or single file -> folder
   local src=$1 tmp
   if [[ -f $src && ${src,,} == *.zip ]]; then
     command -v unzip >/dev/null || die "unzip not found (sudo apt install unzip)"
@@ -221,8 +222,12 @@ resolve_source() {                # folder or .zip -> folder (single top dir unw
     unzip -q "$src" -d "$tmp" || die "could not unzip $src"
     rm -rf "$tmp/__MACOSX"
     src=$tmp
+  elif [[ -f $src ]]; then                     # one .bst/.sty/.cls file
+    tmp=$(mktemp -d); TMP_DIRS+=("$tmp")
+    cp "$src" "$tmp/"
+    src=$tmp
   fi
-  [[ -d $src ]] || die "folder or .zip not found: $src"
+  [[ -d $src ]] || die "folder, .zip or file not found: $src"
   src=$(cd "$src" && pwd)
   # a folder that only wraps one sub-folder (common in downloads) is unwrapped
   local entries
@@ -437,7 +442,7 @@ case "${1:-}" in
   -v|--version)        echo "create_latex $VERSION"; exit 0 ;;
   -l|--list)           list_templates; exit 0 ;;
   --profiles)          list_profiles; exit 0 ;;
-  --install-class)     (( $# == 3 )) || die "usage: create_latex --install-class <name> <folder|zip>"
+  --install-class)     (( $# == 3 )) || die "usage: create_latex --install-class <name> <folder|zip|file>"
                        install_class "$2" "$3"; exit 0 ;;
   --add-template)      (( $# == 3 || $# == 4 )) || die "usage: create_latex --add-template <name> <folder|zip> [main.tex]"
                        add_template "$2" "$3" "${4:-}"; exit 0 ;;

@@ -67,7 +67,7 @@ create_latex --local <project_name> <template>       # + copy of shared class fi
 create_latex --list                                  # templates, and what is missing
 create_latex --profiles                              # your author profiles
 create_latex --add-template <name> <folder|zip> [main.tex]
-create_latex --install-class <name> <folder|zip>
+create_latex --install-class <name> <folder|zip|file>
 create_latex --remove-template <name>
 ```
 
@@ -240,6 +240,27 @@ echo 'BUNDLE="mdpi"' >> ~/.local/share/create_latex/templates/mdpi/template.conf
 pre-converts EPS logos to PDF. With `BUNDLE` set,
 `create_latex --local <project> mdpi` copies the class files back into a project
 when you need to submit it or upload it to Overleaf.
+
+### Custom bibliography styles (.bst) and packages (.sty)
+
+A project normally needs only its `.bib`: the `.bib` holds the references, and
+the standard styles that format them (`IEEEtran`, `plain`, `unsrt`, `apalike`,
+...) come with TeX Live. A **custom** style, such as a modified
+`IEEEtran_doi.bst`, or a `.sty` of your own, is installed once and from then on
+works in every project, exactly like the standard ones:
+
+```bash
+create_latex --install-class bibstyles ~/Downloads/IEEEtran_doi.bst
+```
+
+It goes to `~/texmf/bibtex/bst/bibstyles/` (a `.sty` to `~/texmf/tex/latex/bibstyles/`).
+Run it again with other files under the same name to grow the collection.
+If a project uses a style that is not installed, `./build.sh` says so and prints
+this command.
+
+When you share a project (co-author, Overleaf, journal submission), also keep a
+copy of any custom `.bst`/`.sty` in the project folder: other computers do not
+have your `~/texmf`.
 
 ### Update or remove a template
 
